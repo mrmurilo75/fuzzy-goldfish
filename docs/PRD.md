@@ -1,6 +1,6 @@
 # Fuzzy Goldfish — Product Requirements Document (MVP)
 
-Status: Draft v1 — 2026-07-05
+Status: Draft v2 — 2026-07-05 (architecture decisions resolved)
 
 ## 1. Overview
 
@@ -139,9 +139,13 @@ mode, note version history.
   - Given an autosave request fails (e.g. network drop), then the indicator
     shows an unsaved/error state and the editor retries; my text is never
     cleared.
+  - Given the note was modified elsewhere since my editor loaded it (e.g. a
+    second tab), when a save is attempted with a stale version, then the
+    server rejects it and the editor shows a conflict warning instead of
+    silently overwriting.
   - Given unsaved changes, when I navigate away or close the tab, then I am
     warned before leaving.
-- **Out of scope** — Offline persistence, multi-device conflict resolution,
+- **Out of scope** — Offline persistence, automatic conflict merging,
   version history / undo across sessions.
 
 ### 5.5 Note list with title filter
@@ -214,35 +218,36 @@ mode, note version history.
 
 ## 6. Architecture decisions
 
-Decided:
+All decided:
 
-- **Parser strategy** — dual implementation (JS for live preview, Python for
-  canonical rendering) governed by a single grammar spec and a shared
-  fixture suite both must pass.
-- **Preview model** — client-side parsing; no server round-trip while
-  typing.
-
-Open questions (recommended defaults in parentheses, to be confirmed):
-
-1. **API style** — plain Django views + lightweight JSON endpoints for
-   editor operations (recommended), DRF, or HTMX partials.
-2. **Storage model** — store raw FGM only and render on demand
-   (recommended), vs. also caching rendered HTML.
-3. **Autosave concurrency** — last-write-wins with updated-at echo
-   (recommended for single-user-per-note MVP), vs. version-check conflict
-   detection.
-4. **Database & deployment** — PostgreSQL + Docker Compose as the canonical
-   self-host story (cookiecutter defaults; recommended).
-5. **App structure** — a single new `notes` Django app, with the Python
-   parser as an importable module within it (recommended), vs. a separate
-   parser package.
-6. **Grammar spec formality** — human-readable spec + shared JSON fixtures
-   (recommended), vs. a formal EBNF/PEG grammar both parsers derive from.
-7. **Editor pane** — plain `<textarea>` + vanilla JS module (recommended for
-   MVP), vs. CodeMirror 6.
-8. **Testing** — pytest with fixture-driven parser conformance tests
-   (baseline); optionally pytest-bdd for the Gherkin acceptance criteria
-   above.
+1. **Parser strategy** — dual implementation (JS for live preview, Python
+   for canonical rendering) governed by a single grammar spec and a shared
+   fixture suite both must pass.
+2. **Preview model** — client-side parsing; no server round-trip while
+   typing.
+3. **API style** — plain Django views for navigation plus lightweight JSON
+   endpoints (fetch API) for editor operations. No DRF, no HTMX.
+4. **Storage model** — store raw FGM text only; render on demand with the
+   Python parser. No cached HTML column.
+5. **Autosave concurrency** — optimistic concurrency: each save carries the
+   version/timestamp the editor loaded; on mismatch the server rejects the
+   save and the editor surfaces a conflict warning. No automatic merging.
+6. **Database & deployment** — PostgreSQL in production; Docker Compose is
+   the canonical self-host path (cookiecutter defaults).
+7. **App structure** — a `notes` Django app for models/views/templates,
+   plus a **standalone, framework-free `fgm/` parser package** with its own
+   tests, imported by the app. The JS parser lives alongside it as the
+   second implementation of the same spec.
+8. **Grammar spec** — three artifacts, kept consistent: a formal grammar
+   file (EBNF/PEG) as the source of truth, a human-readable spec doc
+   (`docs/fgm-spec.md`), and a shared JSON fixture suite (FGM → expected
+   HTML) that both parsers must pass in CI.
+9. **Editor pane** — a plain `<textarea>` with a small vanilla-JS module
+   (debounce, Ctrl/Cmd+S, preview wiring). No editor framework in MVP.
+10. **Testing** — pytest for unit/view tests; the shared fixture suite runs
+    against the Python parser via pytest and the JS parser via a Node test
+    runner, both in CI; the PRD's Given/When/Then acceptance criteria are
+    encoded as executable pytest-bdd feature files.
 
 ## 7. Success measures (MVP)
 
